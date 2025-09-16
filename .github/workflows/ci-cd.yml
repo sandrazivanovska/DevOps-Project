@@ -10,6 +10,7 @@ env:
   REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository_owner }}/devops-project
 
+
 jobs:
   # CI Job - Build and Test
   ci:

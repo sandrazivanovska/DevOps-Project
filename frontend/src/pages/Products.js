@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { productService } from '../services/productService';
 import { useCart } from '../contexts/CartContext';
-import { Search, Filter, Grid, List, ShoppingCart } from 'lucide-react';
+import { Search, Grid, List, ShoppingCart } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Products = () => {
@@ -48,14 +48,14 @@ const Products = () => {
     setCurrentPage(1);
   };
 
-  const handleSortChange = (field) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-  };
+  // const handleSortChange = (field) => {
+  //   if (sortBy === field) {
+  //     setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  //   } else {
+  //     setSortBy(field);
+  //     setSortOrder('asc');
+  //   }
+  // };
 
   const handleAddToCart = (product) => {
     addToCart(product);

@@ -13,8 +13,8 @@ const Profile = () => {
   const {
     register: registerProfile,
     handleSubmit: handleProfileSubmit,
-    formState: { errors: profileErrors },
-    reset: resetProfile
+    formState: { errors: profileErrors }
+    // reset: resetProfile
   } = useForm({
     defaultValues: {
       first_name: user?.first_name || '',

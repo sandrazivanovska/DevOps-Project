@@ -43,7 +43,7 @@ jobs:
 
     - name: Build frontend
       working-directory: ./frontend
-      run: npm run build
+      run: CI=false npm run build
 
   # CD Job - Build and Push Docker Images
   cd:

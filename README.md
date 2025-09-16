@@ -8,7 +8,7 @@ This application consists of the following services:
 
 - **Frontend**: React.js application with modern UI
 - **Backend**: Node.js/Express.js REST API
-- **Database**: PostgreSQL with comprehensive schema
+- **Database**: MongoDB with comprehensive schema
 - **Cache**: Redis for performance optimization
 - **Reverse Proxy**: Nginx for load balancing and SSL termination
 - **Containerization**: Docker and Docker Compose for orchestration
@@ -29,7 +29,7 @@ This application consists of the following services:
 ### Backend Features
 - RESTful API with Express.js
 - JWT-based authentication
-- PostgreSQL database with complex relationships
+- MongoDB database with document-based schema
 - Redis caching for performance
 - Input validation and error handling
 - Rate limiting and security middleware
@@ -46,7 +46,7 @@ This application consists of the following services:
 
 - Docker and Docker Compose
 - Node.js 18+ (for local development)
-- PostgreSQL 15+ (for local development)
+- MongoDB 7+ (for local development)
 - Redis 7+ (for local development)
 
 ## 🛠️ Installation & Setup
@@ -67,7 +67,7 @@ This application consists of the following services:
 3. **Access the application**
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:5000
-   - Database: localhost:5432
+   - Database: localhost:27017
    - Redis: localhost:6379
 
 ## 🔄 CI/CD Pipeline
@@ -103,7 +103,7 @@ The application is fully containerized and ready for Kubernetes deployment:
 
 ### Kubernetes Features
 - **Namespace Isolation**: All resources in `devops-app` namespace
-- **StatefulSet**: PostgreSQL with persistent storage
+- **StatefulSet**: MongoDB with persistent storage
 - **Deployments**: Scalable backend and frontend services
 - **Services**: Internal service communication
 - **Ingress**: External access configuration
@@ -182,8 +182,8 @@ For detailed Kubernetes documentation, see [k8s/README.md](k8s/README.md).
 
 3. **Database Setup**
    ```bash
-   # Start PostgreSQL and Redis
-   # Run the init.sql script in your PostgreSQL instance
+   # Start MongoDB and Redis
+   # The init-mongo.js script will run automatically when MongoDB starts
    ```
 
 ## 🔧 Configuration
@@ -192,11 +192,7 @@ For detailed Kubernetes documentation, see [k8s/README.md](k8s/README.md).
 
 #### Backend (.env)
 ```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=devops_app
-DB_USER=devops_user
-DB_PASSWORD=devops_password
+MONGODB_URI=mongodb://localhost:27017/devops_app
 REDIS_HOST=localhost
 REDIS_PORT=6379
 JWT_SECRET=your-super-secret-jwt-key
@@ -213,13 +209,12 @@ REACT_APP_ENV=development
 
 ## 📊 Database Schema
 
-The application includes the following main tables:
+The application includes the following main collections:
 
 - **users**: User accounts with authentication
 - **products**: Product catalog with categories
-- **orders**: Order management
-- **order_items**: Order line items
-- **audit_logs**: System audit trail
+- **orders**: Order management with embedded order items
+- **auditlogs**: System audit trail
 
 ## 🔐 Authentication
 
@@ -274,7 +269,7 @@ The application uses JWT-based authentication with the following features:
 
 The application is containerized with the following services:
 
-1. **postgres**: PostgreSQL 15 database
+1. **mongodb**: MongoDB 7.0 database
 2. **redis**: Redis 7 cache
 3. **backend**: Node.js API server
 4. **frontend**: React.js application (served by Nginx)
@@ -296,7 +291,7 @@ The application is containerized with the following services:
 - **Rate Limiting**: API rate limiting
 - **JWT Security**: Secure token-based authentication
 - **Password Hashing**: Bcrypt password hashing
-- **SQL Injection Protection**: Parameterized queries
+- **NoSQL Injection Protection**: Input validation and sanitization
 
 ## 🧪 Testing
 
@@ -325,7 +320,7 @@ npm test
    ```bash
    # Set production environment variables
    export NODE_ENV=production
-   export DB_HOST=your-production-db-host
+   export MONGODB_URI=your-production-mongodb-uri
    export REDIS_HOST=your-production-redis-host
    ```
 
@@ -367,7 +362,7 @@ For support and questions:
 - **v1.0.0**: Initial release with full-stack functionality
   - React frontend with modern UI
   - Node.js backend API
-  - PostgreSQL database
+  - MongoDB database
   - Redis caching
   - Docker containerization
   - Nginx reverse proxy

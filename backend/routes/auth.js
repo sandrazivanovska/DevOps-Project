@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const User = require('../models/User');
 const redis = require('../config/redis');
 const { protect } = require('../middleware/auth');
 
@@ -25,42 +25,40 @@ router.post('/register', [
     const { username, email, password, first_name, last_name } = req.body;
 
     // Check if user exists
-    const existingUser = await db.query(
-      'SELECT id FROM users WHERE email = $1 OR username = $2',
-      [email, username]
-    );
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
+    });
 
-    if (existingUser.rows.length > 0) {
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // Create user (password will be hashed by pre-save middleware)
+    const user = new User({
+      username,
+      email,
+      password_hash: password, // Will be hashed by pre-save middleware
+      first_name,
+      last_name
+    });
 
-    // Create user
-    const result = await db.query(
-      'INSERT INTO users (username, email, password_hash, first_name, last_name) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, first_name, last_name, role, created_at',
-      [username, email, hashedPassword, first_name, last_name]
-    );
-
-    const user = result.rows[0];
+    await user.save();
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id },
+      { id: user._id },
       process.env.JWT_SECRET || 'devops-secret-key',
       { expiresIn: '7d' }
     );
 
     // Cache user data in Redis
-    await redis.setEx(`user:${user.id}`, 3600, JSON.stringify(user));
+    await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.status(201).json({
       success: true,
       token,
       user: {
-        id: user.id,
+        id: user._id,
         username: user.username,
         email: user.email,
         first_name: user.first_name,
@@ -91,22 +89,17 @@ router.post('/login', [
 
     // Check for user
     console.log('Login attempt for email:', email);
-    const result = await db.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const user = await User.findOne({ email });
 
-    console.log('User found:', result.rows.length > 0);
-    if (result.rows.length === 0) {
+    console.log('User found:', !!user);
+    if (!user) {
       console.log('No user found with email:', email);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    const user = result.rows[0];
-
     // Check password
     console.log('Comparing password:', password, 'with hash:', user.password_hash);
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const isMatch = await user.comparePassword(password);
     console.log('Password match:', isMatch);
 
     if (!isMatch) {
@@ -116,26 +109,19 @@ router.post('/login', [
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id },
+      { id: user._id },
       process.env.JWT_SECRET || 'devops-secret-key',
       { expiresIn: '7d' }
     );
 
     // Cache user data in Redis
-    await redis.setEx(`user:${user.id}`, 3600, JSON.stringify({
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      role: user.role
-    }));
+    await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.json({
       success: true,
       token,
       user: {
-        id: user.id,
+        id: user._id,
         username: user.username,
         email: user.email,
         first_name: user.first_name,
@@ -165,19 +151,14 @@ router.get('/me', protect, async (req, res) => {
     }
 
     // If not in cache, get from database
-    const result = await db.query(
-      'SELECT id, username, email, first_name, last_name, role, created_at FROM users WHERE id = $1',
-      [req.user.id]
-    );
+    const user = await User.findById(req.user.id).select('-password_hash');
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const user = result.rows[0];
-
     // Cache the user data
-    await redis.setEx(`user:${user.id}`, 3600, JSON.stringify(user));
+    await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.json({
       success: true,

@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../config/database');
+const AuditLog = require('../models/AuditLog');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -12,66 +12,33 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
     const { page = 1, limit = 20, table_name, action, user_id } = req.query;
     const offset = (page - 1) * limit;
 
-    let query = `
-      SELECT al.*, u.username, u.email
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      WHERE 1=1
-    `;
-    const queryParams = [];
-    let paramCount = 0;
+    // Build MongoDB query
+    let query = {};
 
     if (table_name) {
-      paramCount++;
-      query += ` AND al.table_name = $${paramCount}`;
-      queryParams.push(table_name);
+      query.table_name = table_name;
     }
 
     if (action) {
-      paramCount++;
-      query += ` AND al.action = $${paramCount}`;
-      queryParams.push(action);
+      query.action = action;
     }
 
     if (user_id) {
-      paramCount++;
-      query += ` AND al.user_id = $${paramCount}`;
-      queryParams.push(user_id);
+      query.user_id = user_id;
     }
 
-    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    queryParams.push(parseInt(limit), offset);
-
-    const result = await db.query(query, queryParams);
+    // Get audit logs with pagination and populate user data
+    const logs = await AuditLog.find(query)
+      .populate('user_id', 'username email')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(offset);
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) FROM audit_logs al WHERE 1=1';
-    const countParams = [];
-    let countParamCount = 0;
-
-    if (table_name) {
-      countParamCount++;
-      countQuery += ` AND al.table_name = $${countParamCount}`;
-      countParams.push(table_name);
-    }
-
-    if (action) {
-      countParamCount++;
-      countQuery += ` AND al.action = $${countParamCount}`;
-      countParams.push(action);
-    }
-
-    if (user_id) {
-      countParamCount++;
-      countQuery += ` AND al.user_id = $${countParamCount}`;
-      countParams.push(user_id);
-    }
-
-    const countResult = await db.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
+    const total = await AuditLog.countDocuments(query);
 
     const response = {
-      logs: result.rows,
+      logs: logs,
       pagination: {
         current_page: parseInt(page),
         total_pages: Math.ceil(total / limit),
@@ -97,20 +64,16 @@ router.get('/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await db.query(`
-      SELECT al.*, u.username, u.email
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      WHERE al.id = $1
-    `, [id]);
+    const log = await AuditLog.findById(id)
+      .populate('user_id', 'username email');
 
-    if (result.rows.length === 0) {
+    if (!log) {
       return res.status(404).json({ message: 'Audit log not found' });
     }
 
     res.json({
       success: true,
-      data: result.rows[0]
+      data: log
     });
   } catch (error) {
     console.error('Get audit log error:', error);
@@ -125,51 +88,51 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
   try {
     const { days = 30 } = req.query;
 
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
     // Get action statistics
-    const actionStats = await db.query(`
-      SELECT action, COUNT(*) as count
-      FROM audit_logs
-      WHERE created_at >= NOW() - INTERVAL '${days} days'
-      GROUP BY action
-      ORDER BY count DESC
-    `);
+    const actionStats = await AuditLog.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      { $group: { _id: '$action', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $project: { action: '$_id', count: 1, _id: 0 } }
+    ]);
 
     // Get table statistics
-    const tableStats = await db.query(`
-      SELECT table_name, COUNT(*) as count
-      FROM audit_logs
-      WHERE created_at >= NOW() - INTERVAL '${days} days'
-      GROUP BY table_name
-      ORDER BY count DESC
-    `);
+    const tableStats = await AuditLog.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      { $group: { _id: '$table_name', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $project: { table_name: '$_id', count: 1, _id: 0 } }
+    ]);
 
     // Get user activity
-    const userStats = await db.query(`
-      SELECT u.username, u.email, COUNT(al.id) as activity_count
-      FROM audit_logs al
-      JOIN users u ON al.user_id = u.id
-      WHERE al.created_at >= NOW() - INTERVAL '${days} days'
-      GROUP BY u.id, u.username, u.email
-      ORDER BY activity_count DESC
-      LIMIT 10
-    `);
+    const userStats = await AuditLog.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: '$user' },
+      { $project: { username: '$user.username', email: '$user.email', activity_count: '$count', _id: 0 } }
+    ]);
 
     // Get daily activity
-    const dailyStats = await db.query(`
-      SELECT DATE(created_at) as date, COUNT(*) as count
-      FROM audit_logs
-      WHERE created_at >= NOW() - INTERVAL '${days} days'
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `);
+    const dailyStats = await AuditLog.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+      { $sort: { _id: -1 } },
+      { $project: { date: '$_id', count: 1, _id: 0 } }
+    ]);
 
     res.json({
       success: true,
       data: {
-        action_stats: actionStats.rows,
-        table_stats: tableStats.rows,
-        user_stats: userStats.rows,
-        daily_stats: dailyStats.rows,
+        action_stats: actionStats,
+        table_stats: tableStats,
+        user_stats: userStats,
+        daily_stats: dailyStats,
         period_days: parseInt(days)
       }
     });

@@ -1,6 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const Order = require('../models/Order');
+const Product = require('../models/Product');
+const User = require('../models/User');
 const redis = require('../config/redis');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -14,55 +16,30 @@ router.get('/', protect, async (req, res) => {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
 
-    let query = `
-      SELECT o.*, u.username, u.email, u.first_name, u.last_name
-      FROM orders o
-      JOIN users u ON o.user_id = u.id
-      WHERE 1=1
-    `;
-    const queryParams = [];
-    let paramCount = 0;
-
+    // Build MongoDB query
+    let query = {};
+    
     // Regular users can only see their own orders
     if (req.user.role !== 'admin') {
-      paramCount++;
-      query += ` AND o.user_id = $${paramCount}`;
-      queryParams.push(req.user.id);
+      query.user_id = req.user._id;
     }
 
     if (status) {
-      paramCount++;
-      query += ` AND o.status = $${paramCount}`;
-      queryParams.push(status);
+      query.status = status;
     }
 
-    query += ` ORDER BY o.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    queryParams.push(parseInt(limit), offset);
-
-    const result = await db.query(query, queryParams);
+    // Get orders with pagination and populate user data
+    const orders = await Order.find(query)
+      .populate('user_id', 'username email first_name last_name')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(offset);
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) FROM orders o WHERE 1=1';
-    const countParams = [];
-    let countParamCount = 0;
-
-    if (req.user.role !== 'admin') {
-      countParamCount++;
-      countQuery += ` AND o.user_id = $${countParamCount}`;
-      countParams.push(req.user.id);
-    }
-
-    if (status) {
-      countParamCount++;
-      countQuery += ` AND o.status = $${countParamCount}`;
-      countParams.push(status);
-    }
-
-    const countResult = await db.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
+    const total = await Order.countDocuments(query);
 
     const response = {
-      orders: result.rows,
+      orders: orders,
       pagination: {
         current_page: parseInt(page),
         total_pages: Math.ceil(total / limit),
@@ -88,37 +65,21 @@ router.get('/:id', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    let query = `
-      SELECT o.*, u.username, u.email, u.first_name, u.last_name
-      FROM orders o
-      JOIN users u ON o.user_id = u.id
-      WHERE o.id = $1
-    `;
-    const queryParams = [id];
-
+    // Build MongoDB query
+    let query = { _id: id };
+    
     // Regular users can only see their own orders
     if (req.user.role !== 'admin') {
-      query += ` AND o.user_id = $2`;
-      queryParams.push(req.user.id);
+      query.user_id = req.user._id;
     }
 
-    const result = await db.query(query, queryParams);
+    const order = await Order.findOne(query)
+      .populate('user_id', 'username email first_name last_name')
+      .populate('order_items.product_id', 'name image_url');
 
-    if (result.rows.length === 0) {
+    if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
-
-    const order = result.rows[0];
-
-    // Get order items
-    const itemsResult = await db.query(`
-      SELECT oi.*, p.name as product_name, p.image_url
-      FROM order_items oi
-      JOIN products p ON oi.product_id = p.id
-      WHERE oi.order_id = $1
-    `, [id]);
-
-    order.items = itemsResult.rows;
 
     res.json({
       success: true,
@@ -147,64 +108,58 @@ router.post('/', protect, [
 
     const { items, shipping_address } = req.body;
 
-    // Start transaction
-    await db.query('BEGIN');
-
+    // Start MongoDB session for transaction
+    const session = await Order.startSession();
+    let order;
+    
     try {
-      let totalAmount = 0;
-      const orderItems = [];
+      order = await session.withTransaction(async () => {
+        let totalAmount = 0;
+        const orderItems = [];
 
-      // Validate products and calculate total
-      for (const item of items) {
-        const productResult = await db.query('SELECT * FROM products WHERE id = $1', [item.product_id]);
-        
-        if (productResult.rows.length === 0) {
-          await db.query('ROLLBACK');
-          return res.status(400).json({ message: `Product with ID ${item.product_id} not found` });
-        }
+        // Validate products and calculate total
+        for (const item of items) {
+          const product = await Product.findById(item.product_id);
+          
+          if (!product) {
+            throw new Error(`Product with ID ${item.product_id} not found`);
+          }
 
-        const product = productResult.rows[0];
+          if (product.stock_quantity < item.quantity) {
+            throw new Error(`Insufficient stock for product ${product.name}. Available: ${product.stock_quantity}`);
+          }
 
-        if (product.stock_quantity < item.quantity) {
-          await db.query('ROLLBACK');
-          return res.status(400).json({ 
-            message: `Insufficient stock for product ${product.name}. Available: ${product.stock_quantity}` 
+          const itemTotal = product.price * item.quantity;
+          totalAmount += itemTotal;
+
+          orderItems.push({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            price: product.price
           });
         }
 
-        const itemTotal = product.price * item.quantity;
-        totalAmount += itemTotal;
-
-        orderItems.push({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: product.price
+        // Create order
+        const newOrder = new Order({
+          user_id: req.user._id,
+          total_amount: totalAmount,
+          shipping_address,
+          order_items: orderItems
         });
-      }
 
-      // Create order
-      const orderResult = await db.query(
-        'INSERT INTO orders (user_id, total_amount, shipping_address) VALUES ($1, $2, $3) RETURNING *',
-        [req.user.id, totalAmount, shipping_address]
-      );
+        await newOrder.save({ session });
 
-      const order = orderResult.rows[0];
+        // Update stock for each product
+        for (const item of orderItems) {
+          await Product.findByIdAndUpdate(
+            item.product_id,
+            { $inc: { stock_quantity: -item.quantity } },
+            { session }
+          );
+        }
 
-      // Create order items and update stock
-      for (const item of orderItems) {
-        await db.query(
-          'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-          [order.id, item.product_id, item.quantity, item.price]
-        );
-
-        // Update stock
-        await db.query(
-          'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2',
-          [item.quantity, item.product_id]
-        );
-      }
-
-      await db.query('COMMIT');
+        return newOrder;
+      });
 
       // Clear related caches
       await redis.del('orders:*');
@@ -214,8 +169,9 @@ router.post('/', protect, [
         data: order
       });
     } catch (error) {
-      await db.query('ROLLBACK');
       throw error;
+    } finally {
+      await session.endSession();
     }
   } catch (error) {
     console.error('Create order error:', error);
@@ -238,16 +194,15 @@ router.put('/:id/status', protect, authorize('admin'), [
     const { id } = req.params;
     const { status } = req.body;
 
-    const result = await db.query(
-      'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
-      [status, id]
+    const order = await Order.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
     );
 
-    if (result.rows.length === 0) {
+    if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
-
-    const order = result.rows[0];
 
     // Clear related caches
     await redis.del('orders:*');
@@ -269,22 +224,19 @@ router.put('/:id/cancel', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if order exists and belongs to user (or user is admin)
-    let query = 'SELECT * FROM orders WHERE id = $1';
-    const queryParams = [id];
-
+    // Build MongoDB query
+    let query = { _id: id };
+    
+    // Regular users can only cancel their own orders
     if (req.user.role !== 'admin') {
-      query += ' AND user_id = $2';
-      queryParams.push(req.user.id);
+      query.user_id = req.user._id;
     }
 
-    const result = await db.query(query, queryParams);
+    const order = await Order.findOne(query);
 
-    if (result.rows.length === 0) {
+    if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
-
-    const order = result.rows[0];
 
     if (order.status === 'cancelled') {
       return res.status(400).json({ message: 'Order is already cancelled' });
@@ -294,30 +246,27 @@ router.put('/:id/cancel', protect, async (req, res) => {
       return res.status(400).json({ message: 'Cannot cancel delivered order' });
     }
 
-    // Start transaction
-    await db.query('BEGIN');
-
+    // Start MongoDB session for transaction
+    const session = await Order.startSession();
+    
     try {
-      // Update order status
-      await db.query(
-        'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        ['cancelled', id]
-      );
-
-      // Restore stock for cancelled items
-      const itemsResult = await db.query(
-        'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
-        [id]
-      );
-
-      for (const item of itemsResult.rows) {
-        await db.query(
-          'UPDATE products SET stock_quantity = stock_quantity + $1 WHERE id = $2',
-          [item.quantity, item.product_id]
+      await session.withTransaction(async () => {
+        // Update order status
+        await Order.findByIdAndUpdate(
+          id,
+          { status: 'cancelled' },
+          { session }
         );
-      }
 
-      await db.query('COMMIT');
+        // Restore stock for cancelled items
+        for (const item of order.order_items) {
+          await Product.findByIdAndUpdate(
+            item.product_id,
+            { $inc: { stock_quantity: item.quantity } },
+            { session }
+          );
+        }
+      });
 
       // Clear related caches
       await redis.del('orders:*');
@@ -327,8 +276,9 @@ router.put('/:id/cancel', protect, async (req, res) => {
         message: 'Order cancelled successfully'
       });
     } catch (error) {
-      await db.query('ROLLBACK');
       throw error;
+    } finally {
+      await session.endSession();
     }
   } catch (error) {
     console.error('Cancel order error:', error);

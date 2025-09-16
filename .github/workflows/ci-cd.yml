@@ -11,7 +11,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test:
+  # CI Job - Build and Test
+  ci:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -23,38 +24,34 @@ jobs:
         node-version: '18'
         cache: 'npm'
         cache-dependency-path: |
-          backend/package-lock.json
           frontend/package-lock.json
-
-    - name: Install backend dependencies
-      run: |
-        cd backend
-        npm ci
-
-    - name: Run backend tests
-      run: |
-        cd backend
-        npm test --if-present
+          backend/package-lock.json
 
     - name: Install frontend dependencies
-      run: |
-        cd frontend
-        npm ci
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Install backend dependencies
+      working-directory: ./backend
+      run: npm ci
 
     - name: Run frontend tests
-      run: |
-        cd frontend
-        npm test --if-present
+      working-directory: ./frontend
+      run: npm test -- --coverage --watchAll=false
+
+    - name: Run backend tests
+      working-directory: ./backend
+      run: npm test
 
     - name: Build frontend
-      run: |
-        cd frontend
-        npm run build
+      working-directory: ./frontend
+      run: npm run build
 
-  build-and-push:
-    needs: test
+  # CD Job - Build and Push Docker Images
+  cd:
+    needs: ci
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
     steps:
     - name: Checkout code
@@ -63,11 +60,11 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to DockerHub
+    - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
     - name: Extract metadata
       id: meta
@@ -85,7 +82,7 @@ jobs:
       with:
         context: ./backend
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
     - name: Build and push frontend image
@@ -93,25 +90,20 @@ jobs:
       with:
         context: ./frontend
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Update deployment manifests
-      run: |
-        # Update image tags in Kubernetes manifests
-        sed -i "s|image: .*devopsproject-backend.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}|g" k8s/*.yaml
-        sed -i "s|image: .*devopsproject-frontend.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}|g" k8s/*.yaml
+    - name: Build and push nginx image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./nginx
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Commit updated manifests
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add k8s/*.yaml
-        git diff --staged --quiet || git commit -m "Update image tags to ${{ github.sha }}"
-        git push
-
+  # Optional: Deploy to Kubernetes (Bonus Points)
   deploy:
-    needs: build-and-push
+    needs: cd
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
@@ -122,7 +114,7 @@ jobs:
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
       with:
-        version: 'v1.28.0'
+        version: 'latest'
 
     - name: Configure kubectl
       run: |
@@ -132,6 +124,12 @@ jobs:
     - name: Deploy to Kubernetes
       run: |
         export KUBECONFIG=kubeconfig
+        # Update image tags in manifests
+        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest|g" k8s/deployments.yaml
+        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest|g" k8s/deployments.yaml
+        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest|g" k8s/deployments.yaml
+        
+        # Apply manifests
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/configmaps.yaml
         kubectl apply -f k8s/secrets.yaml
@@ -140,13 +138,7 @@ jobs:
         kubectl apply -f k8s/services.yaml
         kubectl apply -f k8s/ingress.yaml
 
-    - name: Wait for deployment
-      run: |
-        export KUBECONFIG=kubeconfig
-        kubectl rollout status deployment/backend -n devops-app --timeout=300s
-        kubectl rollout status deployment/frontend -n devops-app --timeout=300s
-
-    - name: Get deployment status
+    - name: Verify deployment
       run: |
         export KUBECONFIG=kubeconfig
         kubectl get pods -n devops-app

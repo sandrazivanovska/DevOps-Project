@@ -6,7 +6,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const db = require('./config/database');
+const mongoose = require('./config/database');
 const redis = require('./config/redis');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -50,7 +50,7 @@ app.use(morgan('combined'));
 app.get('/health', async (req, res) => {
   try {
     // Check database connection
-    await db.query('SELECT 1');
+    await mongoose.connection.db.admin().ping();
     
     // Check Redis connection
     await redis.ping();
@@ -102,14 +102,14 @@ app.use(errorHandler);
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
-  await db.end();
+  await mongoose.connection.close();
   await redis.quit();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
-  await db.end();
+  await mongoose.connection.close();
   await redis.quit();
   process.exit(0);
 });

@@ -5,11 +5,13 @@ import { productService } from '../services/productService';
 import { ShoppingBag, Star, ArrowRight } from 'lucide-react';
 
 const Home = () => {
-  const { data: productsData, isLoading } = useQuery(
+  const { data: productsData, isLoading, error } = useQuery(
     'featured-products',
     () => productService.getProducts({ limit: 6 }),
     {
-      select: (data) => data.data.products
+      select: (data) => data?.data?.products || [],
+      retry: 1,
+      retryDelay: 1000
     }
   );
 
@@ -112,9 +114,23 @@ const Home = () => {
                 </div>
               ))}
             </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
+                <h3 className="text-lg font-semibold text-red-800 mb-2">
+                  Unable to load products
+                </h3>
+                <p className="text-red-600 mb-4">
+                  {error.message || 'There was an error loading the featured products.'}
+                </p>
+                <p className="text-sm text-red-500">
+                  Please make sure the backend server is running on port 5000.
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {productsData?.map((product) => (
+              {productsData && productsData.length > 0 ? productsData.map((product) => (
                 <div key={product.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
                   <div className="aspect-w-16 aspect-h-9">
                     <img
@@ -143,7 +159,18 @@ const Home = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="col-span-full text-center py-12">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 max-w-md mx-auto">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                      No products available
+                    </h3>
+                    <p className="text-gray-600">
+                      There are currently no featured products to display.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

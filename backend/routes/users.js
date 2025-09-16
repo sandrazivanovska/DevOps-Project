@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const User = require('../models/User');
 const redis = require('../config/redis');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -26,17 +26,17 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
       });
     }
 
-    const result = await db.query(
-      'SELECT id, username, email, first_name, last_name, role, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-      [parseInt(limit), offset]
-    );
+    const users = await User.find()
+      .select('-password_hash')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(offset);
 
     // Get total count
-    const countResult = await db.query('SELECT COUNT(*) FROM users');
-    const total = parseInt(countResult.rows[0].count);
+    const total = await User.countDocuments();
 
     const response = {
-      users: result.rows,
+      users: users,
       pagination: {
         current_page: parseInt(page),
         total_pages: Math.ceil(total / limit),
@@ -66,7 +66,7 @@ router.get('/:id', protect, async (req, res) => {
     const { id } = req.params;
 
     // Users can only view their own profile unless they're admin
-    if (req.user.id !== parseInt(id) && req.user.role !== 'admin') {
+    if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to view this user' });
     }
 
@@ -80,16 +80,11 @@ router.get('/:id', protect, async (req, res) => {
       });
     }
 
-    const result = await db.query(
-      'SELECT id, username, email, first_name, last_name, role, created_at FROM users WHERE id = $1',
-      [id]
-    );
+    const user = await User.findById(id).select('-password_hash');
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-
-    const user = result.rows[0];
 
     // Cache for 10 minutes
     await redis.setEx(`user:${id}`, 600, JSON.stringify(user));
@@ -122,33 +117,35 @@ router.put('/:id', protect, [
     const { first_name, last_name, email } = req.body;
 
     // Users can only update their own profile unless they're admin
-    if (req.user.id !== parseInt(id) && req.user.role !== 'admin') {
+    if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to update this user' });
     }
 
     // Check if user exists
-    const existingUser = await db.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (existingUser.rows.length === 0) {
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     // Check if email is already taken by another user
     if (email) {
-      const emailCheck = await db.query(
-        'SELECT id FROM users WHERE email = $1 AND id != $2',
-        [email, id]
-      );
-      if (emailCheck.rows.length > 0) {
+      const emailCheck = await User.findOne({ email, _id: { $ne: id } });
+      if (emailCheck) {
         return res.status(400).json({ message: 'Email already taken' });
       }
     }
 
-    const result = await db.query(
-      'UPDATE users SET first_name = COALESCE($1, first_name), last_name = COALESCE($2, last_name), email = COALESCE($3, email), updated_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING id, username, email, first_name, last_name, role, created_at',
-      [first_name, last_name, email, id]
-    );
-
-    const user = result.rows[0];
+    const user = await User.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          ...(first_name && { first_name }),
+          ...(last_name && { last_name }),
+          ...(email && { email })
+        }
+      },
+      { new: true, runValidators: true }
+    ).select('-password_hash');
 
     // Clear user cache
     await redis.del(`user:${id}`);
@@ -180,33 +177,25 @@ router.put('/:id/password', protect, [
     const { current_password, new_password } = req.body;
 
     // Users can only change their own password unless they're admin
-    if (req.user.id !== parseInt(id) && req.user.role !== 'admin') {
+    if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to change this user\'s password' });
     }
 
     // Get user with password
-    const result = await db.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (result.rows.length === 0) {
+    const user = await User.findById(id);
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const user = result.rows[0];
-
     // Verify current password
-    const isMatch = await bcrypt.compare(current_password, user.password_hash);
+    const isMatch = await user.comparePassword(current_password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
 
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(new_password, salt);
-
-    // Update password
-    await db.query(
-      'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [hashedPassword, id]
-    );
+    // Update password (will be hashed by pre-save middleware)
+    user.password_hash = new_password;
+    await user.save();
 
     // Clear user cache
     await redis.del(`user:${id}`);
@@ -229,13 +218,13 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     const { id } = req.params;
 
     // Prevent admin from deleting themselves
-    if (req.user.id === parseInt(id)) {
+    if (req.user._id.toString() === id) {
       return res.status(400).json({ message: 'Cannot delete your own account' });
     }
 
-    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
+    const user = await User.findByIdAndDelete(id);
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 

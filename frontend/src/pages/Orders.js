@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { orderService } from '../services/orderService';
 import { Package, Calendar, DollarSign, Eye } from 'lucide-react';
@@ -163,10 +164,13 @@ const Orders = () => {
                         <span className="font-medium">Shipping Address:</span> {order.shipping_address}
                       </p>
                     </div>
-                    <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center text-sm">
+                    <Link
+                      to={`/orders/${order._id}`}
+                      className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center text-sm"
+                    >
                       <Eye className="w-4 h-4 mr-2" />
                       View Details
-                    </button>
+                    </Link>
                   </div>
                 </div>
               </div>

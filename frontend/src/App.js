@@ -12,7 +12,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Profile from './pages/Profile';
 import Orders from './pages/Orders';
+import OrderDetail from './pages/OrderDetail';
 import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
 import AdminDashboard from './pages/AdminDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -42,6 +44,12 @@ function App() {
                 <Route path="/register" element={<Register />} />
                 <Route path="/cart" element={<Cart />} />
                 
+                <Route path="/checkout" element={
+                  <ProtectedRoute>
+                    <Checkout />
+                  </ProtectedRoute>
+                } />
+                
                 <Route path="/profile" element={
                   <ProtectedRoute>
                     <Profile />
@@ -51,6 +59,12 @@ function App() {
                 <Route path="/orders" element={
                   <ProtectedRoute>
                     <Orders />
+                  </ProtectedRoute>
+                } />
+                
+                <Route path="/orders/:id" element={
+                  <ProtectedRoute>
+                    <OrderDetail />
                   </ProtectedRoute>
                 } />
                 

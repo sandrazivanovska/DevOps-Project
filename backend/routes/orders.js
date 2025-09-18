@@ -96,7 +96,7 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/', protect, [
   body('items').isArray({ min: 1 }).withMessage('Order must contain at least one item'),
-  body('items.*.product_id').isInt().withMessage('Product ID must be a number'),
+  body('items.*.product_id').isMongoId().withMessage('Product ID must be a valid MongoDB ObjectId'),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
   body('shipping_address').notEmpty().withMessage('Shipping address is required')
 ], async (req, res) => {

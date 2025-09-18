@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { productService } from '../services/productService';
 import { useAuth } from '../hooks/useAuth';
+import { useCart } from '../contexts/CartContext';
 import toast from 'react-hot-toast';
 import { ShoppingCart, Heart, Star, ArrowLeft } from 'lucide-react';
 
@@ -10,6 +11,7 @@ const ProductDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { addToCart } = useCart();
   const [quantity, setQuantity] = useState(1);
 
   const { data: productData, isLoading } = useQuery(
@@ -30,8 +32,11 @@ const ProductDetail = () => {
       return;
     }
 
-    // Here you would implement cart functionality
-    toast.success('Product added to cart!');
+    // Add the product to cart with the selected quantity
+    for (let i = 0; i < quantity; i++) {
+      addToCart(product);
+    }
+    toast.success(`${product.name} added to cart!`);
   };
 
   const handleBuyNow = () => {
@@ -41,8 +46,12 @@ const ProductDetail = () => {
       return;
     }
 
-    // Here you would implement direct purchase functionality
-    toast.success('Redirecting to checkout...');
+    // Add the product to cart with the selected quantity
+    for (let i = 0; i < quantity; i++) {
+      addToCart(product);
+    }
+    toast.success(`${product.name} added to cart!`);
+    navigate('/checkout');
   };
 
   if (isLoading) {

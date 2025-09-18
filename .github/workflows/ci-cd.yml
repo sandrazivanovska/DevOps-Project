@@ -118,7 +118,7 @@ jobs:
         username: ${{ secrets.AWS_USER }}
         key: ${{ secrets.AWS_SSH_KEY }}
         script: |
-          cd /home/ubuntu/devops-project
+          cd /home/ec2-user/devops-app
           git pull origin main
           docker-compose pull
           docker-compose up -d

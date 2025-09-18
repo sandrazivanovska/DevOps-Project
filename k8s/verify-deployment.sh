@@ -59,3 +59,5 @@ echo "1. Port forward: kubectl port-forward service/nginx-service 8080:80 -n dev
 echo "2. Visit: http://localhost:8080"
 
 
+
+

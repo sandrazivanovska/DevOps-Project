@@ -1,46 +1,36 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import { cartService } from '../services/cartService';
+import { useAuth } from '../hooks/useAuth';
 
 const CartContext = createContext();
 
 const cartReducer = (state, action) => {
   switch (action.type) {
-    case 'ADD_TO_CART':
-      const existingItem = state.items.find(item => item.id === action.payload.id);
-      if (existingItem) {
-        return {
-          ...state,
-          items: state.items.map(item =>
-            item.id === action.payload.id
-              ? { ...item, quantity: item.quantity + 1 }
-              : item
-          )
-        };
-      }
+    case 'SET_CART':
       return {
         ...state,
-        items: [...state.items, { ...action.payload, quantity: 1 }]
+        items: action.payload.items || [],
+        total: action.payload.total || 0,
+        loading: false
       };
     
-    case 'REMOVE_FROM_CART':
+    case 'SET_LOADING':
       return {
         ...state,
-        items: state.items.filter(item => item.id !== action.payload)
+        loading: action.payload
       };
     
-    case 'UPDATE_QUANTITY':
+    case 'SET_ERROR':
       return {
         ...state,
-        items: state.items.map(item =>
-          item.id === action.payload.id
-            ? { ...item, quantity: Math.max(0, action.payload.quantity) }
-            : item
-        ).filter(item => item.quantity > 0)
+        error: action.payload,
+        loading: false
       };
     
-    case 'CLEAR_CART':
+    case 'CLEAR_ERROR':
       return {
         ...state,
-        items: []
+        error: null
       };
     
     default:
@@ -50,43 +40,104 @@ const cartReducer = (state, action) => {
 
 export const CartProvider = ({ children }) => {
   const [state, dispatch] = useReducer(cartReducer, {
-    items: []
+    items: [],
+    total: 0,
+    loading: false,
+    error: null
   });
 
-  const addToCart = (product) => {
-    dispatch({ type: 'ADD_TO_CART', payload: product });
+  const { user } = useAuth();
+
+  // Load cart when user logs in
+  useEffect(() => {
+    if (user) {
+      loadCart();
+    } else {
+      dispatch({ type: 'SET_CART', payload: { items: [], total: 0 } });
+    }
+  }, [user]);
+
+  const loadCart = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      const response = await cartService.getCart();
+      dispatch({ type: 'SET_CART', payload: response.data });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+    }
   };
 
-  const removeFromCart = (productId) => {
-    dispatch({ type: 'REMOVE_FROM_CART', payload: productId });
+  const addToCart = async (product, quantity = 1) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      const response = await cartService.addToCart(product._id, quantity);
+      dispatch({ type: 'SET_CART', payload: response.data });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
   };
 
-  const updateQuantity = (productId, quantity) => {
-    dispatch({ type: 'UPDATE_QUANTITY', payload: { id: productId, quantity } });
+  const removeFromCart = async (productId) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      const response = await cartService.removeFromCart(productId);
+      dispatch({ type: 'SET_CART', payload: response.data });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
   };
 
-  const clearCart = () => {
-    dispatch({ type: 'CLEAR_CART' });
+  const updateQuantity = async (productId, quantity) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      const response = await cartService.updateCartItem(productId, quantity);
+      dispatch({ type: 'SET_CART', payload: response.data });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
+  };
+
+  const clearCart = async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      await cartService.clearCart();
+      dispatch({ type: 'SET_CART', payload: { items: [], total: 0 } });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
   };
 
   const getTotalPrice = () => {
-    return state.items.reduce((total, item) => total + (item.price * item.quantity), 0);
+    return state.total || 0;
   };
 
   const getTotalItems = () => {
     return state.items.reduce((total, item) => total + item.quantity, 0);
   };
 
+  const clearError = () => {
+    dispatch({ type: 'CLEAR_ERROR' });
+  };
+
   return (
     <CartContext.Provider
       value={{
         items: state.items,
+        total: state.total,
+        loading: state.loading,
+        error: state.error,
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
         getTotalPrice,
-        getTotalItems
+        getTotalItems,
+        clearError,
+        loadCart
       }}
     >
       {children}

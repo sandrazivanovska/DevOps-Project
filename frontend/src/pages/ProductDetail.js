@@ -25,33 +25,35 @@ const ProductDetail = () => {
 
   const product = productData;
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!isAuthenticated) {
       toast.error('Please login to add items to cart');
       navigate('/login');
       return;
     }
 
-    // Add the product to cart with the selected quantity
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product);
+    try {
+      await addToCart(product, quantity);
+      toast.success(`${product.name} added to cart!`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to add item to cart');
     }
-    toast.success(`${product.name} added to cart!`);
   };
 
-  const handleBuyNow = () => {
+  const handleBuyNow = async () => {
     if (!isAuthenticated) {
       toast.error('Please login to purchase items');
       navigate('/login');
       return;
     }
 
-    // Add the product to cart with the selected quantity
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product);
+    try {
+      await addToCart(product, quantity);
+      toast.success(`${product.name} added to cart!`);
+      navigate('/checkout');
+    } catch (error) {
+      toast.error(error.message || 'Failed to add item to cart');
     }
-    toast.success(`${product.name} added to cart!`);
-    navigate('/checkout');
   };
 
   if (isLoading) {

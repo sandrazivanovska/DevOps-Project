@@ -57,9 +57,13 @@ const Products = () => {
   //   }
   // };
 
-  const handleAddToCart = (product) => {
-    addToCart(product);
-    toast.success(`${product.name} added to cart!`);
+  const handleAddToCart = async (product) => {
+    try {
+      await addToCart(product, 1);
+      toast.success(`${product.name} added to cart!`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to add item to cart');
+    }
   };
 
   const totalPages = productsData?.pagination?.total_pages || 1;

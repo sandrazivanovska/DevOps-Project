@@ -4,7 +4,36 @@ import { ShoppingCart, Plus, Minus, Trash2, ArrowRight } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 
 const Cart = () => {
-  const { items: cartItems, updateQuantity, removeFromCart, getTotalPrice } = useCart();
+  const { items: cartItems, updateQuantity, removeFromCart, getTotalPrice, loading, error } = useCart();
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Shopping Cart</h1>
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading cart...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Shopping Cart</h1>
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">Error: {error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -31,35 +60,35 @@ const Cart = () => {
           <div className="lg:col-span-2">
             <div className="space-y-4">
               {cartItems.map((item) => (
-                <div key={item.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div key={item.product._id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center space-x-4">
                     <img
-                      src={item.image_url || 'https://via.placeholder.com/100x100'}
-                      alt={item.name}
+                      src={item.product.image_url || 'https://via.placeholder.com/100x100'}
+                      alt={item.product.name}
                       className="w-20 h-20 object-cover rounded-lg"
                     />
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900">{item.name}</h3>
-                      <p className="text-gray-600 text-sm">{item.category}</p>
+                      <h3 className="text-lg font-semibold text-gray-900">{item.product.name}</h3>
+                      <p className="text-gray-600 text-sm">{item.product.category}</p>
                       <p className="text-primary-600 font-semibold">${item.price}</p>
                     </div>
                     <div className="flex items-center space-x-3">
                       <button 
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.product._id, item.quantity - 1)}
                         className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
                       >
                         <Minus className="w-4 h-4" />
                       </button>
                       <span className="w-8 text-center font-medium">{item.quantity}</span>
                       <button 
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.product._id, item.quantity + 1)}
                         className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
                     <button 
-                      onClick={() => removeFromCart(item.id)}
+                      onClick={() => removeFromCart(item.product._id)}
                       className="text-red-600 hover:text-red-700 p-2"
                     >
                       <Trash2 className="w-5 h-5" />

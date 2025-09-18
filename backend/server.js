@@ -12,6 +12,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
+const cartRoutes = require('./routes/cart');
 const auditRoutes = require('./routes/audit');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
@@ -93,6 +94,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/cart', cartRoutes);
 app.use('/api/audit', auditRoutes);
 
 // API documentation

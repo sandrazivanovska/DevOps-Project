@@ -4,31 +4,12 @@ metadata:
   name: app-config
   namespace: devops-app
 data:
-  # Backend Configuration
-  DB_HOST: "postgres-service"
-  DB_PORT: "5432"
-  DB_NAME: "devops_app"
-  DB_USER: "devops_user"
-  REDIS_HOST: "redis-service"
-  REDIS_PORT: "6379"
-  JWT_SECRET: "your-super-secret-jwt-key-change-in-production"
   NODE_ENV: "production"
   PORT: "5000"
-  
-  # Frontend Configuration
-  REACT_APP_API_URL: "/api"
-  REACT_APP_FRONTEND_URL: "http://localhost:3000"
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: postgres-config
-  namespace: devops-app
-data:
-  POSTGRES_DB: "devops_app"
-  POSTGRES_USER: "devops_user"
-  POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+  FRONTEND_URL: "*"
+  MONGODB_URI: "mongodb://devops_user:devops_password@mongodb-service:27017/devops_app?authSource=admin"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
 
 ---
 apiVersion: v1
@@ -41,30 +22,61 @@ data:
     events {
         worker_connections 1024;
     }
-    
+
     http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        upstream frontend {
+            server frontend-service:80;
+        }
+
         upstream backend {
             server backend-service:5000;
         }
-        
-        upstream frontend {
-            server frontend-service:3000;
-        }
-        
+
         server {
             listen 80;
             server_name localhost;
-            
-            location /api/ {
-                proxy_pass http://backend/;
+
+            # Redirect direct backend calls to go through nginx proxy
+            location ~ ^/api/ {
+                proxy_pass http://backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                # CORS headers
+                add_header 'Access-Control-Allow-Origin' 'http://localhost:8080' always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+                add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+                
+                # Handle preflight requests
+                if ($request_method = 'OPTIONS') {
+                    add_header 'Access-Control-Allow-Origin' 'http://localhost:8080' always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Access-Control-Max-Age' 1728000;
+                    add_header 'Content-Type' 'text/plain; charset=utf-8';
+                    add_header 'Content-Length' 0;
+                    return 204;
+                }
+            }
+
+            location / {
+                proxy_pass http://frontend;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
             }
-            
-            location / {
-                proxy_pass http://frontend/;
+
+
+            location /health {
+                proxy_pass http://backend/health;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

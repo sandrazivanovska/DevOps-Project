@@ -288,3 +288,5 @@ print('MongoDB initialization completed successfully!');
 print('Database: devops_app');
 print('Collections created: users, products, orders, auditlogs');
 print('Sample data inserted successfully!');
+
+

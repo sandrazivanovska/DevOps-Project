@@ -104,46 +104,22 @@ jobs:
           org.opencontainers.image.description=Nginx for DevOps Project
           org.opencontainers.image.version=${{ github.sha }}
 
-  # Optional: Deploy to Kubernetes (Bonus Points)
+  # Optional: Deploy to AWS EC2 (Bonus Points)
   deploy:
     needs: cd
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
+    - name: Deploy to AWS EC2
+      uses: appleboy/ssh-action@v1.0.0
       with:
-        version: 'latest'
-
-    - name: Configure kubectl
-      run: |
-        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
-        export KUBECONFIG=kubeconfig
-
-    - name: Deploy to Kubernetes
-      run: |
-        export KUBECONFIG=kubeconfig
-        # Update image tags in manifests
-        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest|g" k8s/deployments.yaml
-        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest|g" k8s/deployments.yaml
-        sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest|g" k8s/deployments.yaml
-        
-        # Apply manifests
-        kubectl apply -f k8s/namespace.yaml
-        kubectl apply -f k8s/configmaps.yaml
-        kubectl apply -f k8s/secrets.yaml
-        kubectl apply -f k8s/statefulset.yaml
-        kubectl apply -f k8s/deployments.yaml
-        kubectl apply -f k8s/services.yaml
-        kubectl apply -f k8s/ingress.yaml
-
-    - name: Verify deployment
-      run: |
-        export KUBECONFIG=kubeconfig
-        kubectl get pods -n devops-app
-        kubectl get services -n devops-app
-        kubectl get ingress -n devops-app
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USER }}
+        key: ${{ secrets.AWS_SSH_KEY }}
+        script: |
+          cd /home/ubuntu/devops-project
+          git pull origin main
+          docker-compose pull
+          docker-compose up -d
+          echo "Deployment completed successfully!"

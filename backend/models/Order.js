@@ -78,3 +78,5 @@ orderSchema.methods.removeItem = function(productId) {
 };
 
 module.exports = mongoose.model('Order', orderSchema);
+
+

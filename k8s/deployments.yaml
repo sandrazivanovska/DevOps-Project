@@ -17,50 +17,10 @@ spec:
     spec:
       containers:
       - name: backend
-        image: devopsproject-backend:latest
+        image: zivanovskas/devops-project-backend:latest
         ports:
         - containerPort: 5000
         env:
-        - name: DB_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: DB_HOST
-        - name: DB_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: DB_PORT
-        - name: DB_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: DB_NAME
-        - name: DB_USER
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: DB_USER
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: DB_PASSWORD
-        - name: REDIS_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: REDIS_HOST
-        - name: REDIS_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: REDIS_PORT
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: JWT_SECRET
         - name: NODE_ENV
           valueFrom:
             configMapKeyRef:
@@ -71,6 +31,31 @@ spec:
             configMapKeyRef:
               name: app-config
               key: PORT
+        - name: MONGODB_URI
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MONGODB_URI
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        - name: FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: FRONTEND_URL
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: JWT_SECRET
         resources:
           requests:
             memory: "256Mi"
@@ -111,20 +96,14 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: devopsproject-frontend:latest
+        image: zivanovskas/devops-project-frontend:latest
         ports:
-        - containerPort: 3000
+        - containerPort: 80
         env:
         - name: REACT_APP_API_URL
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: REACT_APP_API_URL
-        - name: REACT_APP_FRONTEND_URL
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: REACT_APP_FRONTEND_URL
+          value: "/api"
+        - name: REACT_APP_ENV
+          value: "production"
         resources:
           requests:
             memory: "128Mi"
@@ -132,18 +111,6 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 5
 
 ---
 apiVersion: apps/v1
@@ -170,25 +137,11 @@ spec:
         - containerPort: 6379
         resources:
           requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
             memory: "128Mi"
             cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
-        livenessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
 
 ---
 apiVersion: apps/v1
@@ -210,7 +163,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: nginx:alpine
+        image: zivanovskas/devops-project-nginx:latest
         ports:
         - containerPort: 80
         volumeMounts:
@@ -224,18 +177,6 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 5
       volumes:
       - name: nginx-config
         configMap:

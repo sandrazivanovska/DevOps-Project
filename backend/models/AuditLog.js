@@ -59,3 +59,5 @@ auditLogSchema.statics.createLog = function(data) {
 };
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);
+
+

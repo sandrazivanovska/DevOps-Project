@@ -1,236 +1,241 @@
-# DevOps Project - Kubernetes Deployment
+# Kubernetes Deployment for DevOps Project
 
-This directory contains all the Kubernetes manifests and deployment scripts for the DevOps Project application.
+This directory contains all the necessary Kubernetes manifests to deploy the DevOps Project application on a Kubernetes cluster.
 
-## 📁 Files Overview
+## 📋 Prerequisites
 
-### Core Manifests
-- `namespace.yaml` - Creates the `devops-app` namespace
-- `configmaps.yaml` - Application configuration (non-sensitive data)
-- `secrets.yaml` - Sensitive configuration (passwords, keys)
-- `statefulset.yaml` - PostgreSQL database with persistent storage
-- `deployments.yaml` - Application deployments (backend, frontend, redis, nginx)
-- `services.yaml` - Service definitions for internal communication
-- `ingress.yaml` - External access configuration
+- Kubernetes cluster (local or cloud)
+- kubectl configured to connect to your cluster
+- Docker images built and pushed to a registry
 
-### Deployment Scripts
-- `deploy.sh` - Bash deployment script (Linux/macOS)
-- `deploy.ps1` - PowerShell deployment script (Windows)
+## 🏗️ Architecture
+
+The application consists of the following components:
+
+### Applications (Deployments)
+- **Backend**: Node.js API server
+- **Frontend**: React application
+- **Nginx**: Reverse proxy and load balancer
+- **Redis**: Caching layer
+
+### Database (StatefulSet)
+- **MongoDB**: Primary database with persistent storage
+
+### Services
+- **backend-service**: ClusterIP service for backend
+- **frontend-service**: ClusterIP service for frontend
+- **nginx-service**: LoadBalancer service for external access
+- **mongodb-service**: ClusterIP service for MongoDB
+- **redis-service**: ClusterIP service for Redis
+
+### Configuration
+- **ConfigMaps**: Application configuration
+- **Secrets**: Sensitive data (passwords, JWT secrets)
+- **Ingress**: External access routing
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Kubernetes cluster (local or cloud)
-- `kubectl` configured to connect to your cluster
-- Docker images built and available (see CI/CD section)
+### Option 1: Using PowerShell Scripts (Windows)
 
-### Deploy to Kubernetes
+1. **Setup local cluster and deploy:**
+   ```powershell
+   .\demo-setup.ps1
+   ```
 
-#### Option 1: Using PowerShell (Windows)
-```powershell
-cd k8s
-.\deploy.ps1
+2. **Verify deployment:**
+   ```powershell
+   .\verify-deployment.ps1
+   ```
+
+### Option 2: Manual Deployment
+
+1. **Create namespace:**
+   ```bash
+   kubectl apply -f namespace.yaml
+   ```
+
+2. **Deploy configuration:**
+   ```bash
+   kubectl apply -f configmaps.yaml
+   kubectl apply -f secrets.yaml
+   ```
+
+3. **Deploy database:**
+   ```bash
+   kubectl apply -f statefulset.yaml
+   kubectl wait --for=condition=ready pod -l app=mongodb -n devops-app --timeout=300s
+   ```
+
+4. **Deploy applications:**
+   ```bash
+   kubectl apply -f deployments.yaml
+   kubectl apply -f services.yaml
+   kubectl apply -f ingress.yaml
+   ```
+
+5. **Wait for all pods to be ready:**
+   ```bash
+   kubectl wait --for=condition=ready pod -l app=backend -n devops-app --timeout=300s
+   kubectl wait --for=condition=ready pod -l app=frontend -n devops-app --timeout=300s
+   kubectl wait --for=condition=ready pod -l app=nginx -n devops-app --timeout=300s
+   ```
+
+## 🔍 Verification
+
+### Check deployment status:
+```bash
+kubectl get pods -n devops-app
+kubectl get services -n devops-app
+kubectl get ingress -n devops-app
 ```
 
-#### Option 2: Using Bash (Linux/macOS)
+### Check logs:
 ```bash
-cd k8s
-chmod +x deploy.sh
-./deploy.sh
+kubectl logs -f deployment/backend -n devops-app
+kubectl logs -f deployment/frontend -n devops-app
+kubectl logs -f statefulset/mongodb -n devops-app
 ```
 
-#### Option 3: Manual Deployment
+### Test connectivity:
 ```bash
-kubectl apply -f namespace.yaml
-kubectl apply -f configmaps.yaml
-kubectl apply -f secrets.yaml
-kubectl apply -f statefulset.yaml
-kubectl apply -f deployments.yaml
-kubectl apply -f services.yaml
-kubectl apply -f ingress.yaml
+kubectl run test-pod --image=busybox --rm -it --restart=Never -- nslookup backend-service.devops-app.svc.cluster.local
 ```
 
 ## 🌐 Accessing the Application
 
-### Method 1: Port Forward (Recommended for local testing)
+### Local Development (Port Forward)
 ```bash
 kubectl port-forward service/nginx-service 8080:80 -n devops-app
 ```
-Then open: http://localhost:8080
+Then visit: http://localhost:8080
 
-### Method 2: LoadBalancer (if supported)
+### Production (LoadBalancer)
+If using a cloud provider with LoadBalancer support:
 ```bash
 kubectl get service nginx-service -n devops-app
 ```
-Use the external IP from the output.
+Use the EXTERNAL-IP to access the application.
 
-### Method 3: Ingress (if ingress controller is installed)
-```bash
-kubectl get ingress -n devops-app
+### Ingress (if supported)
+Add to your hosts file:
 ```
-Add the host entries to your `/etc/hosts` file if using localhost.
-
-## 📊 Monitoring
-
-### Check Pod Status
-```bash
-kubectl get pods -n devops-app
+<INGRESS-IP> devops-app.local
+<INGRESS-IP> api.devops-app.local
 ```
+Then visit: http://devops-app.local
 
-### Check Services
-```bash
-kubectl get services -n devops-app
-```
+## 📊 Monitoring and Debugging
 
-### Check All Resources
+### View all resources:
 ```bash
 kubectl get all -n devops-app
 ```
 
-### View Logs
+### Describe resources:
 ```bash
-# Backend logs
-kubectl logs -f deployment/backend -n devops-app
-
-# Frontend logs
-kubectl logs -f deployment/frontend -n devops-app
-
-# Database logs
-kubectl logs -f statefulset/postgres -n devops-app
+kubectl describe pod <pod-name> -n devops-app
+kubectl describe service <service-name> -n devops-app
 ```
 
-## 🔧 Configuration
-
-### Environment Variables
-All configuration is managed through ConfigMaps and Secrets:
-
-- **ConfigMaps**: Database connection strings, API URLs, non-sensitive settings
-- **Secrets**: Passwords, JWT secrets, API keys
-
-### Scaling
-To scale the application:
+### Check events:
 ```bash
-# Scale backend to 3 replicas
-kubectl scale deployment backend --replicas=3 -n devops-app
-
-# Scale frontend to 3 replicas
-kubectl scale deployment frontend --replicas=3 -n devops-app
+kubectl get events -n devops-app --sort-by='.lastTimestamp'
 ```
 
-### Persistent Storage
-The PostgreSQL database uses a StatefulSet with persistent volume claims:
-- **Storage**: 1Gi persistent volume
-- **Access Mode**: ReadWriteOnce
-- **Reclaim Policy**: Retain (data persists across pod restarts)
-
-## 🧹 Cleanup
+## 🗑️ Cleanup
 
 To remove all resources:
 ```bash
 kubectl delete namespace devops-app
 ```
 
-Or remove individual resources:
-```bash
-kubectl delete -f ingress.yaml
-kubectl delete -f services.yaml
-kubectl delete -f deployments.yaml
-kubectl delete -f statefulset.yaml
-kubectl delete -f secrets.yaml
-kubectl delete -f configmaps.yaml
-kubectl delete -f namespace.yaml
-```
+## 📁 File Structure
 
-## 🔒 Security Notes
+- `namespace.yaml` - Namespace definition
+- `configmaps.yaml` - Application configuration
+- `secrets.yaml` - Sensitive data
+- `deployments.yaml` - Application deployments
+- `services.yaml` - Service definitions
+- `ingress.yaml` - Ingress configuration
+- `statefulset.yaml` - MongoDB StatefulSet
+- `deploy.sh` - Linux deployment script
+- `verify-deployment.sh` - Linux verification script
+- `demo-setup.ps1` - Windows setup script
+- `verify-deployment.ps1` - Windows verification script
 
-### Secrets Management
-- Current secrets are base64 encoded for demonstration
-- In production, use proper secret management (e.g., HashiCorp Vault, AWS Secrets Manager)
-- Rotate secrets regularly
+## 🔧 Configuration Details
 
-### Network Policies
-Consider implementing NetworkPolicies for additional security:
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: devops-app-network-policy
-  namespace: devops-app
-spec:
-  podSelector: {}
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: devops-app
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: devops-app
-```
-
-## 📈 Production Considerations
+### Environment Variables
+- `NODE_ENV`: production
+- `PORT`: 5000 (backend)
+- `MONGODB_URI`: mongodb://mongodb-service:27017/devops_app
+- `REDIS_HOST`: redis-service
+- `REDIS_PORT`: 6379
 
 ### Resource Limits
-All containers have resource requests and limits defined:
-- **CPU**: 50m-500m
-- **Memory**: 64Mi-512Mi
+- **Backend**: 256Mi-512Mi memory, 250m-500m CPU
+- **Frontend**: 128Mi-256Mi memory, 100m-200m CPU
+- **MongoDB**: 256Mi-512Mi memory, 250m-500m CPU
+- **Redis**: 64Mi-128Mi memory, 50m-100m CPU
+- **Nginx**: 64Mi-128Mi memory, 50m-100m CPU
 
-### Health Checks
-All services include:
-- **Liveness Probes**: Restart unhealthy containers
-- **Readiness Probes**: Only route traffic to ready containers
+### Storage
+- **MongoDB**: 1Gi persistent volume claim
 
-### High Availability
-- **Multiple Replicas**: Backend and frontend have 2 replicas each
-- **StatefulSet**: Database ensures ordered deployment and stable network identity
-- **Persistent Storage**: Database data survives pod restarts
-
-## 🐛 Troubleshooting
+## 🚨 Troubleshooting
 
 ### Common Issues
 
-1. **Pods stuck in Pending**
-   ```bash
-   kubectl describe pod <pod-name> -n devops-app
-   ```
+1. **Pods not starting:**
+   - Check resource limits
+   - Verify image availability
+   - Check logs: `kubectl logs <pod-name> -n devops-app`
 
-2. **Database connection issues**
-   ```bash
-   kubectl logs statefulset/postgres -n devops-app
-   ```
+2. **Services not accessible:**
+   - Verify service selectors match pod labels
+   - Check service ports configuration
 
-3. **Service not accessible**
-   ```bash
-   kubectl get endpoints -n devops-app
-   ```
+3. **Database connection issues:**
+   - Ensure MongoDB StatefulSet is ready
+   - Check MongoDB service DNS resolution
 
-4. **Image pull errors**
-   - Ensure Docker images are built and pushed to registry
-   - Check image names and tags in deployment manifests
+4. **Ingress not working:**
+   - Verify ingress controller is installed
+   - Check ingress annotations
+   - Verify host configuration
 
 ### Debug Commands
 ```bash
-# Get detailed pod information
-kubectl describe pod <pod-name> -n devops-app
-
-# Execute commands in pod
-kubectl exec -it <pod-name> -n devops-app -- /bin/bash
+# Check pod status
+kubectl get pods -n devops-app -o wide
 
 # Check service endpoints
 kubectl get endpoints -n devops-app
 
-# View events
-kubectl get events -n devops-app --sort-by='.lastTimestamp'
+# Check persistent volumes
+kubectl get pv,pvc -n devops-app
+
+# Check ingress status
+kubectl describe ingress devops-app-ingress -n devops-app
 ```
 
-## 📚 Additional Resources
+## 📈 Scaling
 
-- [Kubernetes Documentation](https://kubernetes.io/docs/)
-- [Kubernetes StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
-- [Kubernetes Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
-- [Kubernetes ConfigMaps and Secrets](https://kubernetes.io/docs/concepts/configuration/)
+### Scale applications:
+```bash
+kubectl scale deployment backend --replicas=3 -n devops-app
+kubectl scale deployment frontend --replicas=3 -n devops-app
+```
+
+### Scale database (not recommended for single instance):
+```bash
+kubectl scale statefulset mongodb --replicas=1 -n devops-app
+```
+
+## 🔒 Security Considerations
+
+- Secrets are base64 encoded (not encrypted)
+- Use proper RBAC for production
+- Consider using external secret management
+- Enable network policies for micro-segmentation
+- Use TLS for all communications in production

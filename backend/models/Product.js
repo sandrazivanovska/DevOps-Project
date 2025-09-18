@@ -47,3 +47,5 @@ productSchema.virtual('isAvailable').get(function() {
 });
 
 module.exports = mongoose.model('Product', productSchema);
+
+

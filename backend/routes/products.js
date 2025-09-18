@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const Product = require('../models/Product');
 const redis = require('../config/redis');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -11,11 +11,11 @@ const router = express.Router();
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, category, search } = req.query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 10, category, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+    const skip = (page - 1) * limit;
 
     // Try to get from Redis cache first
-    const cacheKey = `products:${page}:${limit}:${category || 'all'}:${search || 'none'}`;
+    const cacheKey = `products:${page}:${limit}:${category || 'all'}:${search || 'none'}:${sortBy}:${sortOrder}`;
     const cachedProducts = await redis.get(cacheKey);
 
     if (cachedProducts) {
@@ -25,49 +25,36 @@ router.get('/', async (req, res) => {
       });
     }
 
-    let query = 'SELECT * FROM products WHERE 1=1';
-    const queryParams = [];
-    let paramCount = 0;
-
+    // Build MongoDB query
+    let query = {};
+    
     if (category) {
-      paramCount++;
-      query += ` AND category = $${paramCount}`;
-      queryParams.push(category);
+      query.category = category;
     }
 
     if (search) {
-      paramCount++;
-      query += ` AND (name ILIKE $${paramCount} OR description ILIKE $${paramCount})`;
-      queryParams.push(`%${search}%`);
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    queryParams.push(parseInt(limit), offset);
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    const result = await db.query(query, queryParams);
-
-    // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) FROM products WHERE 1=1';
-    const countParams = [];
-    let countParamCount = 0;
-
-    if (category) {
-      countParamCount++;
-      countQuery += ` AND category = $${countParamCount}`;
-      countParams.push(category);
-    }
-
-    if (search) {
-      countParamCount++;
-      countQuery += ` AND (name ILIKE $${countParamCount} OR description ILIKE $${countParamCount})`;
-      countParams.push(`%${search}%`);
-    }
-
-    const countResult = await db.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
+    // Execute queries
+    const [products, total] = await Promise.all([
+      Product.find(query)
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Product.countDocuments(query)
+    ]);
 
     const response = {
-      products: result.rows,
+      products,
       pagination: {
         current_page: parseInt(page),
         total_pages: Math.ceil(total / limit),
@@ -104,9 +91,7 @@ router.get('/categories', async (req, res) => {
       });
     }
 
-    const result = await db.query('SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category');
-
-    const categories = result.rows.map(row => row.category);
+    const categories = await Product.distinct('category', { category: { $ne: null } });
 
     // Cache for 1 hour
     await redis.setEx('product_categories', 3600, JSON.stringify(categories));
@@ -138,13 +123,11 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    const result = await db.query('SELECT * FROM products WHERE id = $1', [id]);
+    const product = await Product.findById(id).lean();
 
-    if (result.rows.length === 0) {
+    if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
-
-    const product = result.rows[0];
 
     // Cache the product for 10 minutes
     await redis.setEx(`product:${id}`, 600, JSON.stringify(product));
@@ -175,12 +158,16 @@ router.post('/', protect, authorize('admin'), [
 
     const { name, description, price, category, stock_quantity, image_url } = req.body;
 
-    const result = await db.query(
-      'INSERT INTO products (name, description, price, category, stock_quantity, image_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [name, description, price, category, stock_quantity || 0, image_url]
-    );
+    const product = new Product({
+      name,
+      description,
+      price,
+      category,
+      stock_quantity: stock_quantity || 0,
+      image_url
+    });
 
-    const product = result.rows[0];
+    await product.save();
 
     // Clear related caches
     await redis.del('products:*');
@@ -211,18 +198,24 @@ router.put('/:id', protect, authorize('admin'), [
     const { id } = req.params;
     const { name, description, price, category, stock_quantity, image_url } = req.body;
 
-    // Check if product exists
-    const existingProduct = await db.query('SELECT * FROM products WHERE id = $1', [id]);
-    if (existingProduct.rows.length === 0) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    // Build update object with only provided fields
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (price !== undefined) updateData.price = price;
+    if (category !== undefined) updateData.category = category;
+    if (stock_quantity !== undefined) updateData.stock_quantity = stock_quantity;
+    if (image_url !== undefined) updateData.image_url = image_url;
 
-    const result = await db.query(
-      'UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description), price = COALESCE($3, price), category = COALESCE($4, category), stock_quantity = COALESCE($5, stock_quantity), image_url = COALESCE($6, image_url), updated_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *',
-      [name, description, price, category, stock_quantity, image_url, id]
+    const product = await Product.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
     );
 
-    const product = result.rows[0];
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
 
     // Clear related caches
     await redis.del(`product:${id}`);
@@ -245,9 +238,9 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await db.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
+    const product = await Product.findByIdAndDelete(id);
 
-    if (result.rows.length === 0) {
+    if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 

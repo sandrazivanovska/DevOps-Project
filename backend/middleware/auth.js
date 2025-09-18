@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const db = require('../config/database');
+const User = require('../models/User');
 
 const protect = async (req, res, next) => {
   let token;
@@ -12,17 +12,14 @@ const protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'devops-secret-key');
 
-      // Get user from the token
-      const result = await db.query(
-        'SELECT id, username, email, role FROM users WHERE id = $1',
-        [decoded.id]
-      );
+      // Get user from the token using MongoDB
+      const user = await User.findById(decoded.id).select('-password_hash');
 
-      if (result.rows.length === 0) {
+      if (!user) {
         return res.status(401).json({ message: 'Not authorized, user not found' });
       }
 
-      req.user = result.rows[0];
+      req.user = user;
       next();
     } catch (error) {
       console.error('Token verification error:', error);

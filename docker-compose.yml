@@ -38,6 +38,7 @@ services:
       MONGODB_URI: mongodb://devops_user:devops_password@mongodb:27017/devops_app?authSource=admin
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
     ports:
       - "5000:5000"
     depends_on:

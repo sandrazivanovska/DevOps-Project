@@ -22,10 +22,16 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',');
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
+    // In production, allow all origins for now (you can restrict this later)
+    if (process.env.NODE_ENV === 'production') {
+      return callback(null, true);
+    }
+    
+    // In development, check against allowed origins
+    const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',');
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {

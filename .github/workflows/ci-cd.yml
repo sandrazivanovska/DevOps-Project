@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -13,8 +13,8 @@ env:
 
 jobs:
   
-  docker:
-    needs: ci
+  # CD Job - Build and Push Docker Images
+  cd:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
@@ -70,6 +70,7 @@ jobs:
           org.opencontainers.image.description=Nginx for DevOps Project
           org.opencontainers.image.version=${{ github.sha }}
 
+  # Optional: Deploy to AWS EC2 (Bonus Points)
   deploy:
     needs: cd
     runs-on: ubuntu-latest

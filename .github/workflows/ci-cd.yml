@@ -12,42 +12,8 @@ env:
 
 
 jobs:
-  # CI Job - Build and Test
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
-    - name: Install frontend dependencies
-      working-directory: ./frontend
-      run: npm install
-
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm install
-
-    - name: Run frontend tests
-      working-directory: ./frontend
-      run: npm test -- --coverage --watchAll=false
-      continue-on-error: true
-
-    - name: Run backend tests
-      working-directory: ./backend
-      run: npm test
-      continue-on-error: true
-
-    - name: Build frontend
-      working-directory: ./frontend
-      run: CI=false npm run build
-
-  # CD Job - Build and Push Docker Images
-  cd:
+  
+  docker:
     needs: ci
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
@@ -104,7 +70,6 @@ jobs:
           org.opencontainers.image.description=Nginx for DevOps Project
           org.opencontainers.image.version=${{ github.sha }}
 
-  # Optional: Deploy to AWS EC2 (Bonus Points)
   deploy:
     needs: cd
     runs-on: ubuntu-latest

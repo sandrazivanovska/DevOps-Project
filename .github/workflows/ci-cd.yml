@@ -72,7 +72,7 @@ jobs:
 
   # Optional: Deploy to AWS EC2 (Bonus Points)
   deploy:
-    needs: cd
+    needs: docker
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     

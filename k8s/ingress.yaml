@@ -9,7 +9,9 @@ metadata:
     nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   rules:
+  
   - host: devops-app.local
+
     http:
       paths:
       - path: /

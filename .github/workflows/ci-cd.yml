@@ -70,7 +70,6 @@ jobs:
           org.opencontainers.image.description=Nginx for DevOps Project
           org.opencontainers.image.version=${{ github.sha }}
 
-  # Optional: Deploy to AWS EC2 (Bonus Points)
   deploy:
     needs: docker
     runs-on: ubuntu-latest

@@ -6,12 +6,9 @@ const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-// @desc    Get user's cart
-// @route   GET /api/cart
-// @access  Private
+
 router.get('/', protect, async (req, res) => {
   try {
-    // Try to get from Redis cache first
     const cacheKey = `cart:${req.user._id}`;
     const cachedCart = await redis.get(cacheKey);
 
@@ -34,7 +31,6 @@ router.get('/', protect, async (req, res) => {
       };
     }
 
-    // Cache for 5 minutes
     await redis.setEx(cacheKey, 300, JSON.stringify(cart));
 
     res.json({
@@ -47,42 +43,33 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// @desc    Add item to cart
-// @route   POST /api/cart/items
-// @access  Private
 router.post('/items', protect, async (req, res) => {
   try {
     const { productId, quantity = 1 } = req.body;
 
-    // Validate product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    // Check stock availability
     if (product.stock_quantity < quantity) {
       return res.status(400).json({ 
         message: `Only ${product.stock_quantity} items available in stock` 
       });
     }
 
-    // Find or create cart
     let cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
       cart = new Cart({ user: req.user._id, items: [] });
     }
 
-    // Check if item already exists in cart
     const existingItemIndex = cart.items.findIndex(
       item => item.product.toString() === productId
     );
 
     if (existingItemIndex > -1) {
-      // Update quantity
       cart.items[existingItemIndex].quantity += quantity;
     } else {
-      // Add new item
       cart.items.push({
         product: productId,
         quantity,
@@ -93,7 +80,6 @@ router.post('/items', protect, async (req, res) => {
     await cart.save();
     await cart.populate('items.product', 'name price image_url category');
 
-    // Clear cache
     await redis.del(`cart:${req.user._id}`);
 
     res.json({
@@ -106,9 +92,7 @@ router.post('/items', protect, async (req, res) => {
   }
 });
 
-// @desc    Update item quantity in cart
-// @route   PUT /api/cart/items/:productId
-// @access  Private
+
 router.put('/items/:productId', protect, async (req, res) => {
   try {
     const { productId } = req.params;
@@ -118,13 +102,11 @@ router.put('/items/:productId', protect, async (req, res) => {
       return res.status(400).json({ message: 'Quantity must be at least 1' });
     }
 
-    // Validate product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    // Check stock availability
     if (product.stock_quantity < quantity) {
       return res.status(400).json({ 
         message: `Only ${product.stock_quantity} items available in stock` 
@@ -148,7 +130,6 @@ router.put('/items/:productId', protect, async (req, res) => {
     await cart.save();
     await cart.populate('items.product', 'name price image_url category');
 
-    // Clear cache
     await redis.del(`cart:${req.user._id}`);
 
     res.json({
@@ -161,9 +142,7 @@ router.put('/items/:productId', protect, async (req, res) => {
   }
 });
 
-// @desc    Remove item from cart
-// @route   DELETE /api/cart/items/:productId
-// @access  Private
+
 router.delete('/items/:productId', protect, async (req, res) => {
   try {
     const { productId } = req.params;
@@ -180,7 +159,6 @@ router.delete('/items/:productId', protect, async (req, res) => {
     await cart.save();
     await cart.populate('items.product', 'name price image_url category');
 
-    // Clear cache
     await redis.del(`cart:${req.user._id}`);
 
     res.json({
@@ -193,9 +171,7 @@ router.delete('/items/:productId', protect, async (req, res) => {
   }
 });
 
-// @desc    Clear entire cart
-// @route   DELETE /api/cart
-// @access  Private
+
 router.delete('/', protect, async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user._id });
@@ -206,7 +182,6 @@ router.delete('/', protect, async (req, res) => {
     cart.items = [];
     await cart.save();
 
-    // Clear cache
     await redis.del(`cart:${req.user._id}`);
 
     res.json({

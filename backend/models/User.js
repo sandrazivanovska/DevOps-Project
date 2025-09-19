@@ -42,21 +42,17 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for better performance
 userSchema.index({ email: 1 });
 userSchema.index({ username: 1 });
 
-// Virtual for full name
 userSchema.virtual('fullName').get(function() {
   return `${this.first_name} ${this.last_name}`.trim();
 });
 
-// Method to compare password
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password_hash);
 };
 
-// Method to hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password_hash')) return next();
   
@@ -69,7 +65,6 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Remove password_hash from JSON output
 userSchema.methods.toJSON = function() {
   const userObject = this.toObject();
   delete userObject.password_hash;

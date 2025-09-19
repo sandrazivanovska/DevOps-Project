@@ -4,15 +4,12 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-// @desc    Get audit logs
-// @route   GET /api/audit
-// @access  Private (Admin only)
+
 router.get('/', protect, authorize('admin'), async (req, res) => {
   try {
     const { page = 1, limit = 20, table_name, action, user_id } = req.query;
     const offset = (page - 1) * limit;
 
-    // Build MongoDB query
     let query = {};
 
     if (table_name) {
@@ -27,14 +24,12 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
       query.user_id = user_id;
     }
 
-    // Get audit logs with pagination and populate user data
     const logs = await AuditLog.find(query)
       .populate('user_id', 'username email')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip(offset);
 
-    // Get total count
     const total = await AuditLog.countDocuments(query);
 
     const response = {
@@ -57,9 +52,7 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// @desc    Get audit log by ID
-// @route   GET /api/audit/:id
-// @access  Private (Admin only)
+
 router.get('/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -81,9 +74,7 @@ router.get('/:id', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// @desc    Get audit statistics
-// @route   GET /api/audit/stats
-// @access  Private (Admin only)
+
 router.get('/stats', protect, authorize('admin'), async (req, res) => {
   try {
     const { days = 30 } = req.query;
@@ -91,7 +82,6 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
 
-    // Get action statistics
     const actionStats = await AuditLog.aggregate([
       { $match: { createdAt: { $gte: startDate } } },
       { $group: { _id: '$action', count: { $sum: 1 } } },
@@ -99,7 +89,6 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
       { $project: { action: '$_id', count: 1, _id: 0 } }
     ]);
 
-    // Get table statistics
     const tableStats = await AuditLog.aggregate([
       { $match: { createdAt: { $gte: startDate } } },
       { $group: { _id: '$table_name', count: { $sum: 1 } } },
@@ -107,7 +96,6 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
       { $project: { table_name: '$_id', count: 1, _id: 0 } }
     ]);
 
-    // Get user activity
     const userStats = await AuditLog.aggregate([
       { $match: { createdAt: { $gte: startDate } } },
       { $group: { _id: '$user_id', count: { $sum: 1 } } },
@@ -118,7 +106,6 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
       { $project: { username: '$user.username', email: '$user.email', activity_count: '$count', _id: 0 } }
     ]);
 
-    // Get daily activity
     const dailyStats = await AuditLog.aggregate([
       { $match: { createdAt: { $gte: startDate } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },

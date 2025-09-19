@@ -8,9 +8,7 @@ const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
+
 router.post('/register', [
   body('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().withMessage('Please include a valid email'),
@@ -24,7 +22,6 @@ router.post('/register', [
 
     const { username, email, password, first_name, last_name } = req.body;
 
-    // Check if user exists
     const existingUser = await User.findOne({
       $or: [{ email }, { username }]
     });
@@ -33,25 +30,22 @@ router.post('/register', [
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Create user (password will be hashed by pre-save middleware)
     const user = new User({
       username,
       email,
-      password_hash: password, // Will be hashed by pre-save middleware
+      password_hash: password, 
       first_name,
       last_name
     });
 
     await user.save();
 
-    // Generate JWT
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET || 'devops-secret-key',
       { expiresIn: '7d' }
     );
 
-    // Cache user data in Redis
     await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.status(201).json({
@@ -72,9 +66,7 @@ router.post('/register', [
   }
 });
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+
 router.post('/login', [
   body('email').isEmail().withMessage('Please include a valid email'),
   body('password').exists().withMessage('Password is required')
@@ -87,7 +79,6 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    // Check for user
     console.log('Login attempt for email:', email);
     const user = await User.findOne({ email });
 
@@ -97,7 +88,6 @@ router.post('/login', [
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Check password
     console.log('Comparing password:', password, 'with hash:', user.password_hash);
     const isMatch = await user.comparePassword(password);
     console.log('Password match:', isMatch);
@@ -107,14 +97,12 @@ router.post('/login', [
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Generate JWT
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET || 'devops-secret-key',
       { expiresIn: '7d' }
     );
 
-    // Cache user data in Redis
     await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.json({
@@ -135,12 +123,9 @@ router.post('/login', [
   }
 });
 
-// @desc    Get current user
-// @route   GET /api/auth/me
-// @access  Private
+
 router.get('/me', protect, async (req, res) => {
   try {
-    // Try to get user from Redis cache first
     const cachedUser = await redis.get(`user:${req.user.id}`);
     
     if (cachedUser) {
@@ -150,14 +135,12 @@ router.get('/me', protect, async (req, res) => {
       });
     }
 
-    // If not in cache, get from database
     const user = await User.findById(req.user.id).select('-password_hash');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Cache the user data
     await redis.setEx(`user:${user._id}`, 3600, JSON.stringify(user.toJSON()));
 
     res.json({
@@ -170,12 +153,9 @@ router.get('/me', protect, async (req, res) => {
   }
 });
 
-// @desc    Logout user
-// @route   POST /api/auth/logout
-// @access  Private
+
 router.post('/logout', protect, async (req, res) => {
   try {
-    // Remove user from Redis cache
     await redis.del(`user:${req.user.id}`);
     
     res.json({

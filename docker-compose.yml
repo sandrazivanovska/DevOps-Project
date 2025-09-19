@@ -1,5 +1,4 @@
 services:
-  # MongoDB Database
   mongodb:
     image: mongo:7.0
     container_name: devops-mongodb
@@ -15,7 +14,6 @@ services:
     networks:
       - devops-network
 
-  # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: devops-redis
@@ -26,7 +24,6 @@ services:
     networks:
       - devops-network
 
-  # Backend API
   backend:
     build:
       context: ./backend
@@ -47,7 +44,6 @@ services:
     networks:
       - devops-network
 
-  # Frontend
   frontend:
     build:
       context: ./frontend
@@ -60,7 +56,6 @@ services:
     networks:
       - devops-network
 
-  # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
     container_name: devops-nginx

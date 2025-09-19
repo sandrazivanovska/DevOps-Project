@@ -6,13 +6,10 @@ const protect = async (req, res, next) => {
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
-      // Get token from header
       token = req.headers.authorization.split(' ')[1];
 
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'devops-secret-key');
 
-      // Get user from the token using MongoDB
       const user = await User.findById(decoded.id).select('-password_hash');
 
       if (!user) {

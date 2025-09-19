@@ -7,15 +7,12 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-// @desc    Get all users
-// @route   GET /api/users
-// @access  Private (Admin only)
+
 router.get('/', protect, authorize('admin'), async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
 
-    // Try to get from Redis cache first
     const cacheKey = `users:${page}:${limit}`;
     const cachedUsers = await redis.get(cacheKey);
 
@@ -32,7 +29,6 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
       .limit(parseInt(limit))
       .skip(offset);
 
-    // Get total count
     const total = await User.countDocuments();
 
     const response = {
@@ -45,7 +41,6 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
       }
     };
 
-    // Cache for 5 minutes
     await redis.setEx(cacheKey, 300, JSON.stringify(response));
 
     res.json({
@@ -58,19 +53,15 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// @desc    Get single user
-// @route   GET /api/users/:id
-// @access  Private
+
 router.get('/:id', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Users can only view their own profile unless they're admin
     if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to view this user' });
     }
 
-    // Try to get from Redis cache first
     const cachedUser = await redis.get(`user:${id}`);
 
     if (cachedUser) {
@@ -86,7 +77,6 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Cache for 10 minutes
     await redis.setEx(`user:${id}`, 600, JSON.stringify(user));
 
     res.json({
@@ -99,9 +89,7 @@ router.get('/:id', protect, async (req, res) => {
   }
 });
 
-// @desc    Update user
-// @route   PUT /api/users/:id
-// @access  Private
+
 router.put('/:id', protect, [
   body('first_name').optional().notEmpty().withMessage('First name cannot be empty'),
   body('last_name').optional().notEmpty().withMessage('Last name cannot be empty'),
@@ -116,18 +104,15 @@ router.put('/:id', protect, [
     const { id } = req.params;
     const { first_name, last_name, email } = req.body;
 
-    // Users can only update their own profile unless they're admin
     if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to update this user' });
     }
 
-    // Check if user exists
     const existingUser = await User.findById(id);
     if (!existingUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Check if email is already taken by another user
     if (email) {
       const emailCheck = await User.findOne({ email, _id: { $ne: id } });
       if (emailCheck) {
@@ -147,7 +132,6 @@ router.put('/:id', protect, [
       { new: true, runValidators: true }
     ).select('-password_hash');
 
-    // Clear user cache
     await redis.del(`user:${id}`);
 
     res.json({
@@ -160,9 +144,7 @@ router.put('/:id', protect, [
   }
 });
 
-// @desc    Change password
-// @route   PUT /api/users/:id/password
-// @access  Private
+
 router.put('/:id/password', protect, [
   body('current_password').notEmpty().withMessage('Current password is required'),
   body('new_password').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
@@ -176,28 +158,23 @@ router.put('/:id/password', protect, [
     const { id } = req.params;
     const { current_password, new_password } = req.body;
 
-    // Users can only change their own password unless they're admin
     if (req.user._id.toString() !== id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to change this user\'s password' });
     }
 
-    // Get user with password
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Verify current password
     const isMatch = await user.comparePassword(current_password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
 
-    // Update password (will be hashed by pre-save middleware)
     user.password_hash = new_password;
     await user.save();
 
-    // Clear user cache
     await redis.del(`user:${id}`);
 
     res.json({
@@ -210,14 +187,11 @@ router.put('/:id/password', protect, [
   }
 });
 
-// @desc    Delete user
-// @route   DELETE /api/users/:id
-// @access  Private (Admin only)
+
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Prevent admin from deleting themselves
     if (req.user._id.toString() === id) {
       return res.status(400).json({ message: 'Cannot delete your own account' });
     }
@@ -228,7 +202,6 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Clear user cache
     await redis.del(`user:${id}`);
 
     res.json({

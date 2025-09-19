@@ -37,11 +37,9 @@ const productSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for better performance
 productSchema.index({ category: 1 });
-productSchema.index({ name: 'text', description: 'text' }); // Text search index
+productSchema.index({ name: 'text', description: 'text' }); 
 
-// Virtual for availability status
 productSchema.virtual('isAvailable').get(function() {
   return this.stock_quantity > 0;
 });

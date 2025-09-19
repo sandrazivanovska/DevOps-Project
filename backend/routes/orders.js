@@ -8,18 +8,14 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-// @desc    Get all orders
-// @route   GET /api/orders
-// @access  Private
+
 router.get('/', protect, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
 
-    // Build MongoDB query
     let query = {};
     
-    // Regular users can only see their own orders
     if (req.user.role !== 'admin') {
       query.user_id = req.user._id;
     }
@@ -28,14 +24,12 @@ router.get('/', protect, async (req, res) => {
       query.status = status;
     }
 
-    // Get orders with pagination and populate user data
     const orders = await Order.find(query)
       .populate('user_id', 'username email first_name last_name')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip(offset);
 
-    // Get total count
     const total = await Order.countDocuments(query);
 
     const response = {
@@ -58,17 +52,13 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// @desc    Get single order
-// @route   GET /api/orders/:id
-// @access  Private
+
 router.get('/:id', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Build MongoDB query
     let query = { _id: id };
     
-    // Regular users can only see their own orders
     if (req.user.role !== 'admin') {
       query.user_id = req.user._id;
     }
@@ -91,9 +81,7 @@ router.get('/:id', protect, async (req, res) => {
   }
 });
 
-// @desc    Create new order
-// @route   POST /api/orders
-// @access  Private
+
 router.post('/', protect, [
   body('items').isArray({ min: 1 }).withMessage('Order must contain at least one item'),
   body('items.*.product_id').isMongoId().withMessage('Product ID must be a valid MongoDB ObjectId'),
@@ -108,7 +96,6 @@ router.post('/', protect, [
 
     const { items, shipping_address } = req.body;
 
-    // Start MongoDB session for transaction
     const session = await Order.startSession();
     let order;
     
@@ -117,7 +104,6 @@ router.post('/', protect, [
         let totalAmount = 0;
         const orderItems = [];
 
-        // Validate products and calculate total
         for (const item of items) {
           const product = await Product.findById(item.product_id);
           
@@ -139,7 +125,6 @@ router.post('/', protect, [
           });
         }
 
-        // Create order
         const newOrder = new Order({
           user_id: req.user._id,
           total_amount: totalAmount,
@@ -149,7 +134,6 @@ router.post('/', protect, [
 
         await newOrder.save({ session });
 
-        // Update stock for each product
         for (const item of orderItems) {
           await Product.findByIdAndUpdate(
             item.product_id,
@@ -161,7 +145,6 @@ router.post('/', protect, [
         return newOrder;
       });
 
-      // Clear related caches
       await redis.del('orders:*');
 
       res.status(201).json({
@@ -179,9 +162,7 @@ router.post('/', protect, [
   }
 });
 
-// @desc    Update order status
-// @route   PUT /api/orders/:id/status
-// @access  Private (Admin only)
+
 router.put('/:id/status', protect, authorize('admin'), [
   body('status').isIn(['pending', 'processing', 'shipped', 'delivered', 'cancelled']).withMessage('Invalid status')
 ], async (req, res) => {
@@ -204,7 +185,6 @@ router.put('/:id/status', protect, authorize('admin'), [
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Clear related caches
     await redis.del('orders:*');
 
     res.json({
@@ -217,17 +197,13 @@ router.put('/:id/status', protect, authorize('admin'), [
   }
 });
 
-// @desc    Cancel order
-// @route   PUT /api/orders/:id/cancel
-// @access  Private
+
 router.put('/:id/cancel', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Build MongoDB query
     let query = { _id: id };
     
-    // Regular users can only cancel their own orders
     if (req.user.role !== 'admin') {
       query.user_id = req.user._id;
     }
@@ -246,19 +222,16 @@ router.put('/:id/cancel', protect, async (req, res) => {
       return res.status(400).json({ message: 'Cannot cancel delivered order' });
     }
 
-    // Start MongoDB session for transaction
     const session = await Order.startSession();
     
     try {
       await session.withTransaction(async () => {
-        // Update order status
         await Order.findByIdAndUpdate(
           id,
           { status: 'cancelled' },
           { session }
         );
 
-        // Restore stock for cancelled items
         for (const item of order.order_items) {
           await Product.findByIdAndUpdate(
             item.product_id,
@@ -268,7 +241,6 @@ router.put('/:id/cancel', protect, async (req, res) => {
         }
       });
 
-      // Clear related caches
       await redis.del('orders:*');
 
       res.json({

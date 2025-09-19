@@ -12,6 +12,6 @@ resources:
   - services.yaml
   - ingress.yaml
 
-# Removed commonLabels to avoid immutable field conflicts
+
 
 
